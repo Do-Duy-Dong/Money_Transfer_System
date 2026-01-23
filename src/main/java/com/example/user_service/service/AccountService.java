@@ -7,10 +7,12 @@ import com.example.user_service.dto.RegisterRequest;
 import com.example.user_service.model.Account;
 import com.example.user_service.repository.AccountRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @RequiredArgsConstructor
@@ -18,6 +20,7 @@ public class AccountService {
     private final AccountRepository accountRepository;
     private final JWTService jwtService;
     private final PasswordEncoder passwordEncoder;
+    private final RedisTemplate redisTemplate;
     public Account getAccountByUserName(String username) {
         return accountRepository.findByUserName(username)
                 .orElseThrow(() -> new RuntimeException("Account not found"));
@@ -32,6 +35,11 @@ public class AccountService {
         passwordEncoder.matches(request.getPassword(), acc.getPassword());
         String AT= jwtService.generateAccessToken(acc.getUserName());
         String RT= jwtService.generateRefreshToken(acc.getUserName());
+//        Set AT in Redis
+        redisTemplate.opsForValue().set("AT:"+acc.getUserName(), AT,10, TimeUnit.MINUTES);
+//        Save RT in database
+        acc.setToken(RT);
+        accountRepository.save(acc);
 
         return Map.of(
                 "accessToken", AT,
@@ -65,18 +73,31 @@ public class AccountService {
                 .build();
 
     }
-    public Account saveAccount(Account account){
-        return accountRepository.save(account);
+//    API Logout [/api/auth/logout]
+    public void logout(String username){
+        Account account= getAccountByUserName(username);
+        redisTemplate.delete("AT:"+username);
+        account.setToken(null);
+        accountRepository.save(account);
     }
 //    API REFRESH TOKEN [/api/auth/refresh]
     public Map<String, String> refreshToken(String refreshToken) {
+        Account account = accountRepository.findByToken(refreshToken)
+                .orElseThrow(() -> new RuntimeException("Invalid or expired refresh token"));
         String userName = jwtService.extractUsername(refreshToken);
-        Account account = getAccountByUserName(userName);
-        if (jwtService.isTokenValid(refreshToken, account.getUserName())) {
-            String newAccessToken = jwtService.generateAccessToken(account.getUserName());
-            return Map.of("accessToken", newAccessToken);
+        if(!userName.equals(account.getUserName())){
+            throw new RuntimeException("Invalid refresh token");
         }
-        throw new RuntimeException("Invalid or expired refresh token");
+        String newAccessToken = jwtService.generateAccessToken(userName);
+//        Update AT in Redis
+        redisTemplate.opsForValue().set("AT:"+userName, newAccessToken,10, TimeUnit.MINUTES);
+        return Map.of(
+                "accessToken", newAccessToken
+        );
     }
+    public Account saveAccount(Account account){
+        return accountRepository.save(account);
+    }
+
 }
 

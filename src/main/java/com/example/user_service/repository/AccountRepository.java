@@ -8,4 +8,5 @@ import java.util.UUID;
 
 public interface AccountRepository extends JpaRepository<Account, UUID> {
     Optional<Account> findByUserName(String username);
+    Optional<Account> findByToken(String token);
 }

@@ -9,6 +9,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -24,10 +25,9 @@ import java.net.http.HttpResponse;
 @Component
 @RequiredArgsConstructor
 public class JwtFilter extends OncePerRequestFilter {
-    @Autowired
     private final JWTService jwtService;
-    @Autowired
     private final UserDetailService userDetailService;
+    private final RedisTemplate redisTemplate;
 
     @Override
     public void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain filterChain) throws ServletException, IOException {
@@ -40,6 +40,10 @@ public class JwtFilter extends OncePerRequestFilter {
         try {
             Claims claims= jwtService.validateAccessToken(token);
             String userName= claims.getSubject();
+            if(!redisTemplate.hasKey("AT:"+userName)){
+                response.sendError(401,"Token has been revoked");
+                return;
+            }
             if(SecurityContextHolder.getContext().getAuthentication() == null){
                 UserDetails userDetail= userDetailService.loadUserByUsername(userName);
                 UsernamePasswordAuthenticationToken authenticationToken = new UsernamePasswordAuthenticationToken(

@@ -31,6 +31,7 @@ import java.util.UUID;
         private Long balance;
         private boolean active;
         private String role;
+        private String token;
         @Version
         private long version;
 
